@@ -474,13 +474,10 @@ impl GroupedHashAggregateStream {
             agg_group_by.num_group_exprs(),
         )?;
 
-        let filter_expressions = match agg.mode {
-            AggregateMode::Partial
-            | AggregateMode::Single
-            | AggregateMode::SinglePartitioned => agg_filter_expr,
-            AggregateMode::Final | AggregateMode::FinalPartitioned => {
-                vec![None; agg.aggr_expr.len()]
-            }
+        let filter_expressions = if agg.mode.is_first_stage() {
+            agg_filter_expr
+        } else {
+            vec![None; agg.aggr_expr.len()]
         };
 
         // Instantiate the accumulators
@@ -919,17 +916,16 @@ impl GroupedHashAggregateStream {
 
         // Next output each aggregate value
         for acc in self.accumulators.iter_mut() {
-            match self.mode {
-                AggregateMode::Partial => output.extend(acc.state(emit_to)?),
-                _ if spilling => {
+            if self.mode.is_last_stage() {
+                if spilling {
                     // If spilling, output partial state because the spilled data will be
                     // merged and re-evaluated later.
-                    output.extend(acc.state(emit_to)?)
+                    output.extend(acc.state(emit_to)?);
+                } else {
+                    output.push(acc.evaluate(emit_to)?);
                 }
-                AggregateMode::Final
-                | AggregateMode::FinalPartitioned
-                | AggregateMode::Single
-                | AggregateMode::SinglePartitioned => output.push(acc.evaluate(emit_to)?),
+            } else {
+                output.extend(acc.state(emit_to)?);
             }
         }
 
