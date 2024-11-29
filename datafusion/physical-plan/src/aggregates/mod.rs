@@ -95,6 +95,10 @@ pub enum AggregateMode {
     /// This mode requires that the input is partitioned by group key (like
     /// FinalPartitioned)
     SinglePartitioned,
+    /// Combine multiple partial aggregations to produce a new partial aggregation.
+    ///
+    /// This could go in between a Partial step and Final step.
+    PartialReduce = 5,
 }
 
 impl AggregateMode {
@@ -106,13 +110,15 @@ impl AggregateMode {
             AggregateMode::Partial
             | AggregateMode::Single
             | AggregateMode::SinglePartitioned => true,
-            AggregateMode::Final | AggregateMode::FinalPartitioned => false,
+            AggregateMode::Final
+            | AggregateMode::FinalPartitioned
+            | AggregateMode::PartialReduce => false,
         }
     }
 
     pub fn is_last_stage(&self) -> bool {
         match self {
-            AggregateMode::Partial => false,
+            AggregateMode::Partial | AggregateMode::PartialReduce => false,
             AggregateMode::Final
             | AggregateMode::FinalPartitioned
             | AggregateMode::Single
@@ -783,7 +789,7 @@ impl ExecutionPlan for AggregateExec {
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
         match &self.mode {
-            AggregateMode::Partial => {
+            AggregateMode::Partial | AggregateMode::PartialReduce => {
                 vec![Distribution::UnspecifiedDistribution]
             }
             AggregateMode::FinalPartitioned | AggregateMode::SinglePartitioned => {
